@@ -1,144 +1,324 @@
-#include "graph.h"
-#include "search.h"
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <Windows.h>
+#include "graph.hpp"
+#include "search.hpp"
+#include "readInput.hpp"
+#include "interface.hpp"
+#include "logger.hpp"
 
-//using namespace std;
+// РІС‹РІРѕРґ РїСѓС‚Рё РІ РІРёРґРµ СЃС‚СЂРѕРєРё
+void display_path( Path &paths,
+                   const std::vector<int> &distances,
+                   const id &from_city,
+                   const id &to_city,
+                   const IDStore &city_id_store,
+                   const IDStore &transport_id_store ) {
 
-// разбивает строку на вектор строк, разделенных пробелами в исходной
-void tokenize( const std::string &str, std::vector<std::string> &out )
-{
-    out.clear( );
-    const char *delimeters1 = "\"";
-    const char *delimeters2 = " \"";
-    int token_num = 1;
-    char *token = strtok( const_cast<char*>( str.c_str( ) ), delimeters1 );
+    if ( distances[to_city] == INF ) {
 
-    while ( token != nullptr )
-    { 
-        if (std::string( token ) != " ") {
-            out.push_back( std::string( token ) );
-            token_num++;
+        clear( );
+        refresh( );
+
+        attron(COLOR_PAIR(4));
+        mvprintw(1, 0, "РСЃРєРѕРјС‹Р№ РіРѕСЂРѕРґ РЅРµРґРѕСЃС‚РёР¶РёРј РёР· РіРѕСЂРѕРґР° РѕС‚РїСЂР°РІР»РµРЅРёСЏ");
+        attroff(COLOR_PAIR(4));
+        wait_for_enter(2);
+
+        } else {
+            const auto path_string = path_to_string( paths,
+                                                     from_city,
+                                                     to_city,
+                                                     city_id_store,
+                                                     transport_id_store );
+
+            clear( );
+            refresh( );
+
+            printw("РСЃРєРѕРјС‹Р№ РїСѓС‚СЊ: ");
+            attron(COLOR_PAIR(4));
+            mvprintw(2, 0, "%s", path_string.c_str());
+            attroff(COLOR_PAIR(4));
         }
-
-        if ( token_num <= 2 )
-            token = strtok( nullptr, delimeters1 );
-        else
-            token = strtok( nullptr, delimeters2 );
-    }
 }
 
-void read_data( std::string file_path, 
-                std::vector<Edge> &arcs, 
-                IDStore &city_id_store, 
-                IDStore &transpor_id_store ) {
+// РІС‹РІРѕРґ РґРѕСЃС‚СѓРїРЅС‹С… РїРѕ РѕРіСЂР°РЅРёС‡РµРЅРёСЏРј РїСѓС‚РµР№
+void display_limit_path( Path paths,
+                         const std::vector<id> &available_cities,
+                         const id &from_city,
+                         const IDStore &city_id_store,
+                         const IDStore &transport_id_store ) {
 
-    std::string line; // хранит считываемую строку
-    std::vector<std::string> tokens; // хранит список слов разделенных пробелами в считываемой строке
-    std::ifstream in( file_path );
+    const auto path_string = limit_paths_to_string( paths,
+                                                    available_cities,
+                                                    from_city,
+                                                    city_id_store,
+                                                    transport_id_store );
 
-    if ( in.is_open( ) ) {
-        while ( std::getline( in, line, '\n' ) )
-        {   
-            // пропуск комментариев
-            if ( *line.begin( ) == '#' ) 
-                continue;
+    clear( );
+    refresh( );
 
-            // пропуск пустых строк
-            if ( line.empty( ) )
-                continue;
-
-            tokenize( line, tokens );
-            arcs.push_back( Edge( tokens, city_id_store, transpor_id_store ) );
-        }
-    }
-
-    in.close( );
+    attron(COLOR_PAIR(4));
+    mvprintw(1, 0, "%s", path_string.c_str());
+    attroff(COLOR_PAIR(4));
 }
 
-int main( ) {
-    while ( true ) {
-        SetConsoleCP(1251);// установка кодовой страницы win-cp 1251 в поток ввода
-        SetConsoleOutputCP(1251); // установка кодовой страницы win-cp 1251 в поток вывода
+int main( int argc, char **argv ) {
+    setlocale(LC_ALL, "");
 
-        //setlocale( LC_ALL, "Russian" );
+    float total_time;
 
-        std::string file_path = "big_data.txt";
-        std::vector<Edge> arcs;
-        IDStore city_id_store;
-        IDStore transpor_id_store;
+    std::vector<Edge> arcs;
+    IDStore city_id_store;
+    IDStore transport_id_store;
 
-        // считываем данные
-        read_data( file_path, arcs, city_id_store, transpor_id_store );
-        Graph test_graph { arcs, city_id_store.size( ) };
-        Path shortest_path { city_id_store.size( ) };
+    // СЃС‡РёС‚С‹РІР°РЅРёРµ РґР°РЅРЅС‹С…
+    if (argc < 2)
+    {
+        std::cout << "Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ С„Р°Р№Р»Р°, СЃРѕРґРµСЂР¶Р°С‰РµРіРѕ РіРѕСЂРѕРґР°" << std::endl;
+        return 1;
+    }
+    else
+    {
+        std::cout << "РџРѕР¶Р°Р»СѓР№СЃС‚Р° РїРѕРґРѕР¶РґРёС‚Рµ, РёРґРµС‚ СЃС‡РёС‚С‹РІР°РЅРёРµ РёР· С„Р°Р№Р»Р°..." << std::endl;
+        read_data( argv[1], arcs, city_id_store, transport_id_store );
+    }
+    
+    Graph graph { arcs, city_id_store.size( ) };
 
-        // запросы пользователя
-        std::cout << "Выберете, какой маршрут хотите найти (введите номер):" << std::endl;
-        std::cout << "1 - оптимальныйий по времени и стоимости" << std::endl;
-        std::cout << "2 - оптимальный по числу посещенных городов" << std::endl;
+    // РєСЂР°С‚С‡Р°Р№С€РёРµ РїСѓС‚Рё РґРѕ РіРѕСЂРѕРґРѕРІ
+    Path shortest_paths { city_id_store.size( ) };
 
-        int cruise_type;
-        std::cin >> cruise_type;
+    // СЂРµР±СЂР° С‡РµСЂРµР· РєРѕС‚РѕСЂС‹Рµ РїСЂРѕС…РѕРґРёС‚ РєСЂР°С‚С‡Р°Р№С€РёР№ РїСѓС‚СЊ РѕС‚ РіРѕСЂРѕРґР° РѕС‚РїСЂР°РІР»РµРЅРёСЏ РґРѕ РіРѕСЂРѕРґР° РЅР°Р·РЅР°С‡РµРЅРёСЏ
+    std::vector<Edge> path_arcs;
 
-        std::cout << "Введите город отпрвления:" << std::endl;
+    // РєСЂР°С‚С‡Р°Р№С€РёРµ СЂР°СЃСЃС‚РѕСЏРЅРёСЏ
+    std::vector<int> distances;
 
-        std::string start_city_name;
-        std::cin >> start_city_name;
-        std::cout << std::endl;
+    // РіРѕСЂРѕРґР° РґРѕСЃС‚РёР¶РёРјС‹Рµ РёР· РіРѕСЂРѕРґР° РѕС‚РїСЂР°РІР»РµРЅРёСЏ СЃ РѕРіСЂР°РЅРёС‡РµРЅРёСЏРјРё
+    std::vector<int> available_cities;
+
+    initscr();
+    noecho();
+    cbreak();
+    halfdelay(5);
+
+    start_color();
+
+    init_pair(1, COLOR_WHITE, COLOR_BLACK);
+    init_pair(2, 10, COLOR_BLACK);
+    init_pair(3, 13, COLOR_BLACK);
+    init_pair(4, 15, COLOR_BLACK);
+    init_pair(5, COLOR_RED, COLOR_BLACK);
+
+    keypad(stdscr, true);
+
+    bool proccess_in_interaction = true;
+
+    // РІР·Р°РёРјРѕРґРµР№СЃС‚РІРёРµ СЃ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј
+    while ( proccess_in_interaction ) 
+    {
+        path_arcs.clear( );
+        distances.clear( );
+        available_cities.clear( );
+
+        clear();
+        refresh();
+
+        // СЃС‡РёС‚С‹РІР°РЅРёРµ СЂРµР¶РёРјР° СЂР°Р±РѕС‚С‹
+        const auto chosen_mode = handle_mode_input( );
         
-        city_id start_city = city_id_store.get_id( start_city_name );
+        clear();
+        refresh();
 
-        //std::cout << "Введите через пробел транспорт, которым планируете пользоватся, из следующего списка: самолет, поезд, автобус, паром, машина" << std::endl;
+        if ( chosen_mode != -1 ) 
+        {
+            if ( chosen_mode < 3 )
+            {
+                // РІРІРѕРґ РіРѕСЂРѕРґРѕРІ РґР»СЏ РєРѕС‚РѕСЂС‹С… РЅСѓР¶РЅРѕ РЅР°Р№С‚Рё РјР°СЂС€СЂСѓС‚
+                const auto city_pair = handle_pair_of_cities_input( city_id_store );
 
-        std::set<transport_id> allowed_transport { 0, 1, 2, 3, 4 };
-        
-        if ( cruise_type == 1 )
-            dijkstra(test_graph, shortest_path, start_city, allowed_transport);
-        else if ( cruise_type == 2 )
-            dfs(test_graph, shortest_path, start_city, allowed_transport);
+                // РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµ СЂР°Р±РѕС‚С‹ РїСЂРѕРіСЂР°РјРјС‹ РїСЂРё РЅРµРїСЂР°РІРёР»СЊРЅРѕРј РІРІРѕРґРµ РЅР°Р·РІР°РЅРёСЏ РіРѕСЂРѕРґР°
+                if (city_pair.first == -1)
+                {
+                    break;
+                }
+                else 
+                {
+                    clear( );
+                    refresh( );
+                    // РІРІРѕРґ РёСЃРїРѕР»СЊР·СѓРµРјРѕРіРѕ С‚СЂР°РЅСЃРїРѕСЂС‚Р°
+                    const auto restricted_transport = handle_restricted_transport_list_input(transport_id_store);
 
-        std::cout << "Введите город назначения:" << std::endl;
+                    clear( );
+                    refresh( );
 
-        std::string end_city_name;
-        std::cin >> end_city_name;
-        std::cout << std::endl;
+                    switch( chosen_mode ) {
+                        // РјРёРЅРёРјР°Р»СЊРЅС‹Рµ РїРѕ СЃС‚РѕРёРјРѕСЃС‚Рё СЃСЂРµРґРё РјРёРЅРёРјР°Р»СЊРЅС‹С… РїРѕ РІСЂРµРјРµРЅРё
+                        case 0:
+                        {
+                            const auto start_time = std::chrono::high_resolution_clock::now();
+                            
+                            distances = dijkstra( graph,
+                                                  shortest_paths,
+                                                  city_pair.first,
+                                                  restricted_transport );
 
-        city_id end_city = city_id_store.get_id( end_city_name );
+                            total_time = estimate_time( start_time.time_since_epoch( ) );
 
-        // хранит маршрут от start_city до end_city
-        std::vector<Edge> path;
+                            display_path( shortest_paths,
+                                          distances,
+                                          city_pair.first,
+                                          city_pair.second,
+                                          city_id_store,
+                                          transport_id_store );
 
-        shortest_path.get_path( start_city, end_city, path );
+                            break;
+                        }
+                        // РјРёРЅРёРјР°Р»СЊРЅС‹Рµ РїРѕ СЃС‚РѕРёРјРѕСЃС‚Рё
+                        case 1:
+                        {
+                            const auto start_time = std::chrono::high_resolution_clock::now();
 
-        // вывод кратчайшего маршрута
-        std::cout << "Оптимальный маршрут:" << std::endl << std::endl;
-        for ( std::vector<Edge>::reverse_iterator it = path.rbegin( ); it != path.rend( ); ++it )
-            std::cout << "Город отправления: " 
-                    << city_id_store.get_name( (*it).from_city )
-                    << std::endl
-                    << "Город прибытия: "
-                    << city_id_store.get_name( (*it).to_city )
-                    << std::endl
-                    << "Тип транспорта: "
-                    << transpor_id_store.get_name( (*it).transport_type )
-                    << std::endl
-                    << "Длительность поездки: "
-                    << (*it).time
-                    << std::endl
-                    << "Стоимость поездки: "
-                    << (*it).fare
-                    << std::endl
-                    << std::endl;
+                            distances = dijkstra( graph,
+                                                  shortest_paths,
+                                                  city_pair.first,
+                                                  restricted_transport,
+                                                  true );
+                            
+                            total_time = estimate_time( start_time.time_since_epoch( ) );
 
-        bool exit;
-        std::cout << "Введите 0 если хотите продолжить или любую другую клавише если хотите выйти:" << std::endl;
-        std::cin >> exit;
+                            display_path( shortest_paths,
+                                          distances,
+                                          city_pair.first,
+                                          city_pair.second,
+                                          city_id_store,
+                                          transport_id_store );
 
-        if ( exit )
+                            break;
+                        }
+                        // РјРёРЅРёРјР°Р»СЊРЅС‹Рµ РїРѕ С‡РёСЃР»Сѓ РїРѕСЃРµС‰РµРЅРЅС‹С… РіРѕСЂРѕРґРѕРІ
+                        case 2:
+                        {
+                            const auto start_time = std::chrono::high_resolution_clock::now();
+
+                            distances = bfs( graph,
+                                             shortest_paths,
+                                             city_pair.first,
+                                             restricted_transport );
+
+                            total_time = estimate_time( start_time.time_since_epoch( ) );
+
+                            display_path( shortest_paths,
+                                          distances,
+                                          city_pair.first,
+                                          city_pair.second,
+                                          city_id_store,
+                                          transport_id_store );
+                            break;
+                        }
+                        default:
+                            break;
+                    } 
+                }
+            // СЂРµР¶РёРјС‹ СЂР°Р±РѕС‚С‹ СЃ РѕРіСЂР°РЅРёС‡РµРЅРёСЏРјРё
+            } else {
+
+                const auto city_from_id = handle_single_city_input(city_id_store);
+
+                clear();
+                refresh();
+
+                long limit;
+
+                if (chosen_mode == 3)
+                {
+                    limit = handle_cost_limit_input();
+                }
+                else
+                {
+                    limit = handle_time_limit_input();
+                }
+
+                clear();
+                refresh();
+
+                const auto restricted_transports = handle_restricted_transport_list_input(transport_id_store);
+
+                clear();
+                refresh();
+
+                switch (chosen_mode)
+                {
+                // РѕРіСЂР°РЅРёС‡РµРЅРёРµ РїРѕ СЃС‚РѕРёРјРѕСЃС‚Рё
+                case 3:
+                {
+                    const auto start_time = std::chrono::high_resolution_clock::now();
+
+                    available_cities = dijkstra( graph,
+                                                 shortest_paths,
+                                                 city_from_id,
+                                                 restricted_transports,
+                                                 false,
+                                                 0,
+                                                 limit );
+
+                    
+
+                    total_time = estimate_time( start_time.time_since_epoch( ) );
+
+                    display_limit_path( shortest_paths,
+                                        available_cities,
+                                        city_from_id,
+                                        city_id_store,
+                                        transport_id_store );
+
+                    break;
+                }
+                case 4:
+                {
+                    const auto start_time = std::chrono::high_resolution_clock::now();
+
+                    available_cities = dijkstra( graph,
+                                                 shortest_paths,
+                                                 city_from_id,
+                                                 restricted_transports,
+                                                 false,
+                                                 limit,
+                                                 0 );
+
+                    total_time = estimate_time( start_time.time_since_epoch( ) );
+
+                    display_limit_path( shortest_paths,
+                                        available_cities,
+                                        city_from_id,
+                                        city_id_store,
+                                        transport_id_store );
+
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+        } else {
             break;
+        }
+
+        // Р·Р°РІРµСЂС€РµРЅРёРµ СЂР°Р±РѕС‚С‹ РїСЂРѕРіСЂР°РјРјС‹
+        char c;
+
+        while ((c = getch()) != 10) {}
+
+        clear();
+        refresh();
+
+        const auto result = handle_finish_app();
+
+        if (result == 0)
+        {
+            proccess_in_interaction = false;
+        }
     }
+
+
+
     return 0;
 }
